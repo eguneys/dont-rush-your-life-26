@@ -63,7 +63,7 @@ export function rigid_body(xy: Vec2, opts: RigidOptions): RigidBody {
         m_left = opts.max_force
     }
 
-    let s_factor = 0.1
+    let s_factor = 0.08
     let smoothed_force = Vec2.zero
     let m_left = opts.max_force
     function add_steering_force(f: Vec2) {
@@ -117,6 +117,7 @@ export type SteerBehaviors = {
     body: RigidBody
     update(delta: number): void
     set_bs(bs: Behavior[]): void
+    get_bs(): Behavior[]
     add_applied_force(f: Vec2): void
 }
 
@@ -149,6 +150,9 @@ export function steer_behaviours(xy: Vec2, opts: RigidOptions, bs: Behavior[]): 
         update,
         set_bs(new_bs: Behavior[]) {
             bs = new_bs
+        },
+        get_bs() {
+            return bs
         },
         add_applied_force(f: Vec2) {
             applied_force = applied_force.add(f)

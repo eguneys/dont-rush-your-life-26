@@ -1,11 +1,11 @@
-import { After,  ConditionalEveryAndAfter, Cooldown, Every, global_trigger, OTween, Tween } from './krx/trigger'
+import { After,  ConditionalEveryAndAfter, Cooldown, Every, global_trigger, OTween, Trigger, Tween } from './krx/trigger'
 import { linear, sine_in  } from './math/ease'
 import { b_arrive_steer, b_avoid_circle_steer, b_chase_steer, b_pursuit_steer, b_separation_steer, b_wall_avoid_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
 import { Line, Rectangle, Vec2 } from './math/vec2'
 import { PointerJust } from './pointer_just'
 import { pixel_perfect_position_update, pos_xy, position, Position } from './position'
-import { random, rnd_float, rnd_int } from './random'
-import { appr, box_intersect, clamp, step_round, XY, XYWH } from './util'
+import { random, rnd_float, rnd_int, rnd_sign } from './random'
+import { appr, appr_angle, box_intersect, clamp, step_round, XY, XYWH } from './util'
 import { Color } from './webgl/color'
 import { g } from './webgl/gl_init'
 
@@ -25,6 +25,9 @@ type Zombie = {
     knock_force: XY
     patrol?: XY[]
     ping: number
+    trigger: Trigger
+    wiggle: number
+    main_bs: Behavior[]
 }
 
 type Cursor = {
@@ -74,20 +77,17 @@ export function _init() {
 
     Every.add_immediate(3000, zombie_add)
 
-    Every.add(5000, () => {
+    Every.add_immediate(5000, () => {
         let a = rnd_int(0, zz.length - 4)
         let flock = zz.slice(a, a + 4)
-        flock.forEach(_ => _.steer.set_bs(
-            [
-                [b_chase_steer(steer_target(cursor.xy)), .8],
-                [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), .3]
-            ])
-        )
+        flock.forEach(_ => _.steer.set_bs(chase_zombie_steer()))
+        flock.forEach(_ => _.main_bs = _.steer.get_bs())
         flock.forEach(f => f.on_pursuit = true)
         flock.forEach(f => f.steer.body.max_speed = 1000)
 
-        After.add(3000, () => {
+        After.add(30000, () => {
             flock.forEach(_ => _.steer.set_bs(pursuit_zombie_steer()))
+        flock.forEach(_ => _.main_bs = _.steer.get_bs())
             flock.forEach(f => f.on_pursuit = false)
             flock.forEach(f => f.steer.body.max_speed = 800)
         })
@@ -158,11 +158,15 @@ export function _init() {
             z.steer.set_bs(
                 [
                     [b_arrive_steer(xy_target(...z.patrol[0]), 20), .8],
+                    [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
                     [b_wall_avoid_steer(100, { get walls() { return tt.map(_ => Line.make(..._.xy)) }}), 3],
                 ])
         }
     })
 }
+
+
+
 
 function vampire_trail_add() {
 
@@ -257,8 +261,8 @@ function cursor_has_collided_zombie(z: Zombie) {
     return box_intersect(c_box(cursor.xy), zombie_box(z.steer.body.position.xy))
 }
 
-function cursor_knock_zombie(z: Zombie) {
-    z.knock_force = z.steer.body.side.scale(6000).xy
+function cursor_knock_zombie(z: Zombie, scale = 6000) {
+    z.knock_force = z.steer.body.side.scale(rnd_sign() * scale).xy
     Tween.add(200, z.knock_force, [0, 0], linear)
 }
 
@@ -269,8 +273,8 @@ function zombie_add() {
     }
 
 
-    for (let i = 0; i < 3; i++)
-        zz.push({
+    for (let i = 0; i < 3; i++) {
+        let z: Zombie = {
             life: 0,
             ping: 0,
             on_pursuit: false,
@@ -281,7 +285,24 @@ function zombie_add() {
                 max_speed: 300,
                 max_force: 2000
             }, spawn_zombie_steer()),
-        })
+            main_bs: spawn_zombie_steer(),
+            trigger: new Trigger(),
+            wiggle: 0
+        }
+
+        zz.push(z)
+
+        ConditionalEveryAndAfter.add(() => z.wiggle < 0.8, (value) => {
+            if (!value) {
+                cursor_knock_zombie(z, rnd_int(3000, 5000))
+            }
+        }, undefined, z.trigger)
+
+
+        Every.add(200, () => {
+            z.wiggle = rnd_float(0, 1)
+        }, undefined, undefined, undefined, undefined, z.trigger)
+    }
 
 }
 
@@ -295,7 +316,6 @@ function xy_target(x: number, y: number) {
 function spawn_zombie_steer(): Behavior[] {
     return [
         [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
-        [b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)],
         [b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)],
         [b_wander_steer(80, 500, 100, random), 8]
     ]
@@ -316,6 +336,13 @@ function pursuit_zombie_steer(): Behavior[] {
         [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
         [b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)],
         [b_wander_steer(80, 500, 100, random), 8]
+    ]
+}
+
+function chase_zombie_steer(): Behavior[] {
+    return [
+        [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 3],
+        [b_chase_steer(steer_target(cursor.xy)), 5],
     ]
 }
 
@@ -344,6 +371,9 @@ function update_zombie(z: Zombie, delta: number) {
 
     z.steer.add_applied_force(Vec2.xy(z.knock_force))
     //z.steer.body.add_impulse(Vec2.xy(z.knock_force))
+
+
+    z.trigger.update(delta)
 }
 
 
@@ -356,7 +386,7 @@ function update_cursor(delta: number) {
 
 
     let facing = Vec2.make(cursor.xy.dx, cursor.xy.dy).perpendicular.clamp_epsilon(10).angle
-    cursor.theta = appr(cursor.theta, facing, 3.3 * delta / 1000)
+    cursor.theta = appr_angle(cursor.theta, facing, 5.3 * delta / 1000)
 
     if (p.is_down) {
         if (!cursor.stick_ran_on_down) {
@@ -521,8 +551,13 @@ function render_cursor() {
     } else {
 
         let off = 8
+
+        g.shape_arc(...drop_shadow_theta(c_box(cursor.xy), cursor.theta + Math.PI / 2, off / 2), Color.lerp(Color.black, Color.white, 0.2), cursor.theta)
+        g.shape_arc(...drop_shadow_theta(c_box(cursor.xy), cursor.theta + Math.PI + Math.PI / 2, off / 2), Color.lerp(Color.black, Color.white, 0.3), cursor.theta)
+
         g.shape_arc(...drop_shadow_theta(c_box(cursor.xy), cursor.theta, off), Theme.Shadow, cursor.theta)
         g.shape_arc(...drop_shadow_theta(c_box(cursor.xy), cursor.theta + Math.PI, off), Theme.Shadow, cursor.theta)
+
 
         g.shape_arc(...c_box(cursor.xy), Color.red, cursor.theta)
     }

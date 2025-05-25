@@ -16,6 +16,21 @@ export function appr(a: number, b: number, t: number) {
     }
 }
 
+export function appr_angle(a: number, b: number, by: number) {
+    let diff = angle_diff(a, b)
+    if (Math.abs(diff) < by) {
+        return b
+    }
+    return a + clamp(diff, -by, by)
+}
+
+export const PI = Math.PI
+export const TAU = Math.PI * 2
+
+export function angle_diff(a: number, b: number) {
+    return ((b - a - PI) % TAU + TAU) % TAU - PI
+}
+
 export function step_round(value: number, by: number) {
     return Math.floor(value / by) * by
 }
