@@ -33,6 +33,7 @@ export type GL = {
     shape_rect(x: number, y: number, w: number, h: number, color: Color, theta?: number): void
     shape_line(x: number, y: number, x2: number, y2: number, thickness: number, color: Color): void
     shape_line_vary(x: number, y: number, x2: number, y2: number, thickness: number, color: Color): void
+    shape_rect_vary(x: number, y: number, w: number, h: number, color: Color, theta?: number): void
 }
 
 //export const g = GL(480, 270)
@@ -184,6 +185,13 @@ export function GL(width: number, height: number): GL {
 
 
             shape_batch.draw(x, y, w, h, 0, 0, 1, 1, color.rgba, theta, 0)
+        },
+        shape_rect_vary(x: number, y: number, w: number, h: number, color: Color, theta = 0) {
+            x = Math.floor(x)
+            y = Math.floor(y)
+
+
+            shape_batch.draw_vary(x, y, w, h, 0, 0, 1, 1, color.rgba, theta, 0)
         },
         shape_line(x: number, y: number, x2: number, y2: number, thickness: number, color: Color) {
             x = Math.floor(x)

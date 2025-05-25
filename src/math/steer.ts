@@ -192,7 +192,6 @@ export const b_path_follow_steer = (path: Line[], c = 1, r = 10) =>
 
 
 
-
 export const b_wall_avoid_steer = (length: number, walls: { walls: Line[] }) =>
 (body: RigidBody) => wall_avoid_steer(body.matrix, length, walls.walls)
 
@@ -276,7 +275,6 @@ function wall_avoid_steer(position: Matrix, length: number, walls: Line[]) {
     let heading = position.matrix_forward
     //let side = position.matrix_side
 
-
     let fs = []
 
     fs.push(heading.scale(length).add(orig))
@@ -312,7 +310,7 @@ function wall_avoid_steer(position: Matrix, length: number, walls: Line[]) {
             steering_force = closest_wall.normal?.scale(overshoot.length)
         }
     }
-    return steering_force
+    return steering_force ?? Vec2.zero
 }
 
 

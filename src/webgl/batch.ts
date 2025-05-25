@@ -1,6 +1,7 @@
 import { Rectangle, Vec2 } from "../math/vec2";
 
 export class SpriteBatch {
+  
 
   private gl: WebGL2RenderingContext;
   private maxSprites = 1000;
@@ -70,6 +71,39 @@ export class SpriteBatch {
       [...Vec2.rotate_point(x, y, theta, cx, cy).xy, u, v],
       [...Vec2.rotate_point(x + w, y + h, theta, cx, cy).xy, u2, v2],
       [...Vec2.rotate_point(x, y + h, theta, cx, cy).xy, u, v2]
+    ];
+
+    for (const [px, py, pu, pv] of vertices) {
+      this.buffer[this.bufferIndex++] = px / this.width;
+      this.buffer[this.bufferIndex++] = py / this.height;
+      this.buffer[this.bufferIndex++] = pu;
+      this.buffer[this.bufferIndex++] = pv;
+      this.buffer[this.bufferIndex++] = color[0];
+      this.buffer[this.bufferIndex++] = color[1];
+      this.buffer[this.bufferIndex++] = color[2];
+      this.buffer[this.bufferIndex++] = color[3];
+      this.buffer[this.bufferIndex++] = type;
+    }
+  }
+
+
+
+  draw_vary(x: number, y: number, w: number, h: number, u = 0, v = 0, u2 = 1, v2 = 1, color = [1, 1, 1, 1], theta: number = 0, type = 0) {
+    if (this.bufferIndex + 6 * this.vertexSize / 4 >= this.buffer.length) {
+      this.flush();
+    }
+
+    let cx = x + w / 2
+    let cy = y + h / 2
+
+    const vertices = [
+      [...Vec2.rotate_point(x, y, theta, cx, cy).xy, u, v],
+      [...Vec2.rotate_point(x + w, y, theta, cx, cy).xy, u2, v],
+      [...Vec2.rotate_point(x + w * 0.8, y + h, theta, cx, cy).xy, u2, v2],
+
+      [...Vec2.rotate_point(x, y, theta, cx, cy).xy, u, v],
+      [...Vec2.rotate_point(x + w * 0.8, y + h, theta, cx, cy).xy, u2, v2],
+      [...Vec2.rotate_point(x + w * 0.2, y + h, theta, cx, cy).xy, u, v2]
     ];
 
     for (const [px, py, pu, pv] of vertices) {

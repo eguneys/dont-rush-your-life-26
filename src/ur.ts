@@ -1,6 +1,6 @@
 import { After,  ConditionalEveryAndAfter, Cooldown, Every, global_trigger, OTween, Tween } from './krx/trigger'
-import { linear } from './math/ease'
-import { b_arrive_steer, b_avoid_circle_steer, b_chase_steer, b_pursuit_steer, b_separation_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
+import { linear, quad_in, sine_in  } from './math/ease'
+import { b_arrive_steer, b_avoid_circle_steer, b_chase_steer, b_pursuit_steer, b_separation_steer, b_wall_avoid_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
 import { Line, Rectangle, Vec2 } from './math/vec2'
 import { PointerJust } from './pointer_just'
 import { pixel_perfect_position_update, pos_xy, position, Position } from './position'
@@ -19,6 +19,7 @@ class Theme {
 let p: PointerJust
 
 type Zombie = {
+    life: number
     on_pursuit: boolean
     steer: SteerBehaviors
     knock_force: XY
@@ -118,7 +119,7 @@ export function _init() {
         cursor.pos_history.shift()
         cursor.pos_history.push(pos_xy(cursor.xy))
     })
-    Cooldown.add(300, is_cursor_slow, vampire_trail_add)
+    Cooldown.add(140, is_cursor_slow, vampire_trail_add)
 
     Every.add(1000, () => {
         console.log(`Zombies: `, zz.length)
@@ -145,10 +146,10 @@ export function _init() {
     Every.add_immediate(1000, () => {
         for (let z of zz) {
             if (z.on_pursuit) {
-                return
+                continue
             }
             if (!z.patrol) {
-                return
+                continue
             }
 
             z.steer.body.max_speed = 100
@@ -157,6 +158,7 @@ export function _init() {
             z.steer.set_bs(
                 [
                     [b_arrive_steer(xy_target(...z.patrol[0]), 20), .8],
+                    [b_wall_avoid_steer(100, { get walls() { return tt.map(_ => Line.make(..._.xy)) }}), 3],
                 ])
         }
     })
@@ -191,7 +193,7 @@ function is_cursor_slow() {
     let deviation = Vec2.make(Math.sqrt(xy[0] / cursor.vel_history.length),
         Math.sqrt(xy[1] / cursor.vel_history.length))
 
-    return deviation.length > 100
+    return deviation.length > 270
 }
 
 // @ts-ignore
@@ -233,6 +235,12 @@ export function _update(delta: number) {
 
 function update_trail(t: VampireTrail, delta: number) {
     t.life = appr(t.life, 0, delta)
+    if (t.life < 3600) {
+        t.life = appr(t.life, 0, delta * 2)
+    }
+    if (t.life < 2000) {
+        t.life = appr(t.life, 0, delta * 2)
+    }
 
     if (t.life === 0) {
         tt.splice(tt.indexOf(t), 1)
@@ -263,6 +271,7 @@ function zombie_add() {
 
     for (let i = 0; i < 3; i++)
         zz.push({
+            life: 0,
             ping: 0,
             on_pursuit: false,
             knock_force: [0, 0],
@@ -296,7 +305,7 @@ function pursuit_zombie_steer(): Behavior[] {
     return [
         [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 3)],
         [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
-        //[b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)]
+        [b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)],
         [b_wander_steer(80, 500, 100, random), 8]
     ]
 }
@@ -315,6 +324,7 @@ function steer_target(pos: Position) {
 
 function update_zombie(z: Zombie, delta: number) {
 
+    z.life += delta
     z.ping = appr(z.ping, -10000, delta)
 
     if (z.ping === -10000) {
@@ -440,6 +450,7 @@ export function _render() {
     
     zz.forEach(render_zombie)
 
+    tt.forEach(render_trail_shadow)
     tt.forEach(render_trail)
 
     render_ui()
@@ -447,11 +458,15 @@ export function _render() {
     g.end_shapes()
 }
 
-function render_trail(t: VampireTrail) {
-    g.shape_line(...drop_shadow(trail_line(t.xy)), t.life/ 1000 * 2, Theme.Shadow)
-    g.shape_line_vary(...trail_line(t.xy), t.life/ 1000 * 2, Theme.HighShadow)
+function render_trail_shadow(t: VampireTrail) {
+    g.shape_line_vary(...drop_shadow(trail_line(t.xy)), t.life/ 1000 * 2, Theme.Shadow)
+}
 
-    g.shape_arc(...trail_box(t.xy), Theme.HighShadow)
+function render_trail(t: VampireTrail) {
+    let color = Color.lerp(Theme.HighShadow, Color.red, sine_in(1 - t.life / 5000))
+    g.shape_line_vary(...trail_line(t.xy), t.life/ 1000 * 2, color)
+
+    g.shape_arc(...trail_box(t.xy, t.life / 1000 * 3.8), color)
 }
 function trail_line(xy: XYWH): XYWH {
 
@@ -460,8 +475,8 @@ function trail_line(xy: XYWH): XYWH {
 
 
 
-function trail_box(xy: XYWH): XYWH {
-    return [xy[2] - 10, xy[3] - 10, 20, 20]
+function trail_box(xy: XYWH, radius: number): XYWH {
+    return [xy[2] - radius / 2, xy[3] - radius / 2, radius, radius]
 }
 
 function render_ui() {
@@ -556,24 +571,30 @@ function stick_box_inner(xy: Position): XYWH {
 
 
 function render_zombie(z: Zombie) {
+
+
     let color = z.on_pursuit ? Color.white : Color.red
     g.shape_rect(...drop_shadow(zombie_box(z.steer.body.position.xy)), Theme.Shadow, z.steer.body.side.angle)
-    g.shape_rect(...zombie_box(z.steer.body.position.xy), color, z.steer.body.side.angle)
-    g.shape_rect(...high_shadow2(zombie_box(z.steer.body.position.xy)), Theme.HighShadow, z.steer.body.side.angle)
 
+    g.shape_line_vary(...drop_shadow(zombie_tail(z)), 7, Theme.Shadow)
 
-    g.shape_line(...zombie_tail(z), 3, Color.red)
+    g.shape_line_vary(...zombie_tail(z), 7, color)
+
+    g.shape_rect_vary(...zombie_box(z.steer.body.position.xy), color, z.steer.body.side.angle)
+    g.shape_rect_vary(...high_shadow2(zombie_box(z.steer.body.position.xy)), Theme.HighShadow, z.steer.body.side.angle)
 }
 
 function zombie_tail(z: Zombie): XYWH {
     let p = z.steer.body.position
-    let p2 = p.sub(z.steer.body.heading.scale(10))
+ 
+    p = p.sub(z.steer.body.heading.scale(3))
+    let p2 = p.sub(z.steer.body.heading.add_angle(Math.sin(z.life * 0.01) * Math.PI * 0.2).scale(12))
 
     return [...p.xy, ...p2.xy]
 }
 
 function zombie_box(xy: XY): XYWH {
-    return [xy[0], xy[1], 8, 16]
+    return [xy[0] - 4, xy[1] - 8, 8, 16]
 }
 
 
