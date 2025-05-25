@@ -1,4 +1,4 @@
-import { After,  ConditionalEveryAndAfter, Every, global_trigger, OTween, Tween } from './krx/trigger'
+import { After,  ConditionalEveryAndAfter, Cooldown, Every, global_trigger, OTween, Tween } from './krx/trigger'
 import { linear } from './math/ease'
 import { b_arrive_steer, b_avoid_circle_steer, b_chase_steer, b_pursuit_steer, b_separation_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
 import { Line, Rectangle, Vec2 } from './math/vec2'
@@ -35,11 +35,19 @@ type Cursor = {
     stamina: number
     stamina_delta: number
     t_stamina_delta: number
+    vel_history: XY[]
+    pos_history: XY[]
+}
+
+type VampireTrail = {
+    life: number,
+    xy: XYWH
 }
 
 let cursor: Cursor
 
 let zz: Zombie[]
+let tt: VampireTrail[]
 
 export function _init() {
 
@@ -54,13 +62,16 @@ export function _init() {
         t_stick: 0,
         stamina: 5000,
         stamina_delta: 0,
-        t_stamina_delta: 0
+        t_stamina_delta: 0,
+        vel_history: [[0, 0], [0, 0], [0, 0]],
+        pos_history: [[0, 0], [0, 0], [0, 0]]
     }
 
+    tt = []
 
     zz = []
 
-    Every.add_immediate(3000, () => { for (let i = 0; i < 3; i++) zombie_add() })
+    Every.add_immediate(3000, zombie_add)
 
     Every.add(5000, () => {
         let a = rnd_int(0, zz.length - 4)
@@ -100,74 +111,21 @@ export function _init() {
         }
     })
 
+    Every.add(60, () => {
+        cursor.vel_history.shift()
+        cursor.vel_history.push([cursor.xy.dx, cursor.xy.dy])
+
+        cursor.pos_history.shift()
+        cursor.pos_history.push(pos_xy(cursor.xy))
+    })
+    Cooldown.add(300, is_cursor_slow, vampire_trail_add)
 
     Every.add(1000, () => {
         console.log(`Zombies: `, zz.length)
+        console.log(`\tPatrol: `, zz.filter(_ => _.patrol).length)
+        console.log(`\tOn Pursuit: `, zz.filter(_ => _.on_pursuit).length)
     })
-}
 
-let t_slow = 0
-export function _update(delta: number) {
-    if (t_slow > 0) {
-        t_slow = appr(t_slow, 0, delta)
-        delta *= 0.555
-    }
-
-
-    for (let z of zz) update_zombie(z, delta)
-    
-    update_cursor(delta)
-
-    if (cursor.stick) {
-
-    } else {
-        for (let z of zz) {
-            if (cursor_has_collided_zombie(z)) {
-                cursor_knock_zombie(z)
-                t_slow += 20
-            }
-        }
-    }
-
-    for (let z of zz) {
-        if (!zombie_collided_play_world(z)) {
-            z.ping += delta
-        }
-    }
-
-    global_trigger.update(delta)
-}
-
-let _play_world_box: XYWH = [-g.width / 2, -g.height/ 2, g.width * 2, g.height * 2]
-function zombie_collided_play_world(z: Zombie) {
-    return has_collided_bounds(...zombie_box(z.steer.body.position.xy))
-}
-
-function cursor_has_collided_zombie(z: Zombie) {
-    return box_intersect(c_box(cursor.xy), zombie_box(z.steer.body.position.xy))
-}
-
-function cursor_knock_zombie(z: Zombie) {
-    z.knock_force = z.steer.body.side.scale(6000).xy
-    Tween.add(200, z.knock_force, [0, 0], linear)
-}
-
-function zombie_add() {
-    if (zz.length !== 0) {
-        //return
-
-    }
-    zz.push({
-        ping: 0,
-        on_pursuit: false,
-        knock_force: [0, 0],
-        steer: steer_behaviours(Vec2.make(100, 100), {
-            mass: 1,
-            damping: 1,
-            max_speed: 300,
-            max_force: 2000
-        }, spawn_zombie_steer()),
-    })
 
 
     Every.add(2000, () => {
@@ -202,6 +160,120 @@ function zombie_add() {
                 ])
         }
     })
+}
+
+function vampire_trail_add() {
+
+    tt.push({
+        life: 5000,
+        xy: cursor_trail()
+    })
+}
+
+function cursor_trail(): XYWH {
+    return [...cursor.pos_history[0], ...cursor.pos_history[cursor.pos_history.length - 1]]
+}
+
+function is_cursor_slow() {
+
+    let sum_x = cursor.vel_history.map(_ => _[0]).reduce((a, b) => a + b, 0)
+    let sum_y = cursor.vel_history.map(_ => _[1]).reduce((a, b) => a + b, 0)
+
+    let avg_x = sum_x / cursor.vel_history.length
+    let avg_y = sum_y / cursor.vel_history.length
+
+    let xy = cursor.vel_history.map(_ => {
+        let dx = _[0] - avg_x
+        let dy = _[1] - avg_y
+        return [dx * dx, dy * dy]
+    }).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0])
+
+    let deviation = Vec2.make(Math.sqrt(xy[0] / cursor.vel_history.length),
+        Math.sqrt(xy[1] / cursor.vel_history.length))
+
+    return deviation.length > 100
+}
+
+// @ts-ignore
+function is_position_slow(xy: Position) {
+    return Vec2.make(xy.dx, xy.dy).length < 10
+}
+
+let t_slow = 0
+export function _update(delta: number) {
+    if (t_slow > 0) {
+        t_slow = appr(t_slow, 0, delta)
+        delta *= 0.555
+    }
+
+    update_cursor(delta)
+
+    for (let z of zz) update_zombie(z, delta)
+    for (let t of tt) update_trail(t, delta)
+
+    if (cursor.stick) {
+
+    } else {
+        for (let z of zz) {
+            if (cursor_has_collided_zombie(z)) {
+                cursor_knock_zombie(z)
+                t_slow += 20
+            }
+        }
+    }
+
+    for (let z of zz) {
+        if (!zombie_collided_play_world(z)) {
+            z.ping += delta
+        }
+    }
+
+    global_trigger.update(delta)
+}
+
+function update_trail(t: VampireTrail, delta: number) {
+    t.life = appr(t.life, 0, delta)
+
+    if (t.life === 0) {
+        tt.splice(tt.indexOf(t), 1)
+    }
+}
+
+// @ts-ignore
+let _play_world_box: XYWH = [-g.width / 2, -g.height/ 2, g.width * 2, g.height * 2]
+function zombie_collided_play_world(z: Zombie) {
+    return has_collided_bounds(...zombie_box(z.steer.body.position.xy))
+}
+
+function cursor_has_collided_zombie(z: Zombie) {
+    return box_intersect(c_box(cursor.xy), zombie_box(z.steer.body.position.xy))
+}
+
+function cursor_knock_zombie(z: Zombie) {
+    z.knock_force = z.steer.body.side.scale(6000).xy
+    Tween.add(200, z.knock_force, [0, 0], linear)
+}
+
+function zombie_add() {
+    if (zz.length !== 0) {
+        //return
+
+    }
+
+
+    for (let i = 0; i < 3; i++)
+        zz.push({
+            ping: 0,
+            on_pursuit: false,
+            knock_force: [0, 0],
+            steer: steer_behaviours(Vec2.make(100, 100), {
+                mass: 1,
+                damping: 1,
+                max_speed: 300,
+                max_force: 2000
+            }, spawn_zombie_steer()),
+        })
+
 }
 
 function xy_target(x: number, y: number) {
@@ -243,9 +315,9 @@ function steer_target(pos: Position) {
 
 function update_zombie(z: Zombie, delta: number) {
 
-    z.ping = appr(z.ping, -1000, delta)
+    z.ping = appr(z.ping, -10000, delta)
 
-    if (z.ping === -1000) {
+    if (z.ping === -10000) {
         zz.splice(zz.indexOf(z), 1)
     }
 
@@ -366,19 +438,38 @@ export function _render() {
 
     render_cursor()
     
-    for (let z of zz) {
-        render_zombie(z)
-    }
+    zz.forEach(render_zombie)
+
+    tt.forEach(render_trail)
+
+    render_ui()
+
+    g.end_shapes()
+}
+
+function render_trail(t: VampireTrail) {
+    g.shape_line(...drop_shadow(trail_line(t.xy)), t.life/ 1000 * 2, Theme.Shadow)
+    g.shape_line_vary(...trail_line(t.xy), t.life/ 1000 * 2, Theme.HighShadow)
+
+    g.shape_arc(...trail_box(t.xy), Theme.HighShadow)
+}
+function trail_line(xy: XYWH): XYWH {
+
+    return [xy[2], xy[3], xy[0], xy[1]]
+}
 
 
 
+function trail_box(xy: XYWH): XYWH {
+    return [xy[2] - 10, xy[3] - 10, 20, 20]
+}
+
+function render_ui() {
     g.shape_rect(...stamina_box, Color.black, 0)
     g.shape_rect(...stamina_box2(cursor.stamina), Color.red, 0)
     if (cursor.stamina_delta) {
         g.shape_rect(...stamina_delta_box2(cursor.stamina, cursor.stamina_delta), Color.white, 0)
     }
-
-    g.end_shapes()
 }
 
 function render_cursor() {

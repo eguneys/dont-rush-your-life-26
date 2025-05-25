@@ -32,6 +32,7 @@ export type GL = {
     shape_arc(x: number, y: number, w: number, h: number, color: Color, theta?: number): void
     shape_rect(x: number, y: number, w: number, h: number, color: Color, theta?: number): void
     shape_line(x: number, y: number, x2: number, y2: number, thickness: number, color: Color): void
+    shape_line_vary(x: number, y: number, x2: number, y2: number, thickness: number, color: Color): void
 }
 
 //export const g = GL(480, 270)
@@ -201,6 +202,26 @@ export function GL(width: number, height: number): GL {
             let rect = l.extrude(thickness)
 
             shape_batch.draw_rect(rect, 0, 0, 0, 0, color.rgba)
+
+        },
+        shape_line_vary(x: number, y: number, x2: number, y2: number, thickness: number, color: Color) {
+            x = Math.floor(x)
+            y = Math.floor(y)
+            x2 = Math.floor(x2)
+            y2 = Math.floor(y2)
+
+
+            let l = Line.make(x, y, x2, y2)
+            let n = l.normal
+
+            if (!n) {
+                return
+            }
+
+            let rect = l.extrude(thickness)
+            let rect2 = l.extrude(thickness / 3)
+
+            shape_batch.draw_rect2(rect, rect2, 0, 0, 0, 0, color.rgba)
 
         }
 

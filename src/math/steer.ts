@@ -225,7 +225,6 @@ function separation_steer(position: Vec2, group: Vec2[], max_speed: number) {
     return res.scale(max_speed)
 }
 
-
 function avoid_circle_steer(position: Vec2, target: Vec2, max_speed: number, zero_angle: number, radius: number) {
     return flee_steer(position, target, max_speed, zero_angle, radius)
 }

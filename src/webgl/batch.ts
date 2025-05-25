@@ -1,6 +1,7 @@
 import { Rectangle, Vec2 } from "../math/vec2";
 
 export class SpriteBatch {
+
   private gl: WebGL2RenderingContext;
   private maxSprites = 1000;
   private vertexSize = 4 * (2 + 2 + 4 + 1); // pos (2) + uv (2) + color (4) + type (1)
@@ -118,7 +119,39 @@ export class SpriteBatch {
 
 
 
+  draw_rect2(rect: Rectangle, rect2: Rectangle, u = 0, v = 0, u2 = 1, v2 = 1, color = [1, 1, 1, 1]) {
+    if (this.bufferIndex + 6 * this.vertexSize / 4 >= this.buffer.length) {
+      this.flush();
+    }
 
+
+    let [a, b, _c, _d] = rect.vertices
+    let [_a, _b, c, d] = rect2.vertices
+
+
+    const vertices = [
+      [a.x, a.y, u, v],
+      [b.x, b.y, u2, v],
+      [c.x, c.y, u2, v2],
+
+      [a.x, a.y, u, v],
+      [c.x, c.y, u2, v2],
+      [d.x, d.y, u, v2]
+    ];
+
+    for (const [px, py, pu, pv] of vertices) {
+      this.buffer[this.bufferIndex++] = px / this.width;
+      this.buffer[this.bufferIndex++] = py / this.height;
+      this.buffer[this.bufferIndex++] = pu;
+      this.buffer[this.bufferIndex++] = pv;
+      this.buffer[this.bufferIndex++] = color[0];
+      this.buffer[this.bufferIndex++] = color[1];
+      this.buffer[this.bufferIndex++] = color[2];
+      this.buffer[this.bufferIndex++] = color[3];
+      this.buffer[this.bufferIndex++] = 0;
+    }
+
+  }
 
 
   flush() {
