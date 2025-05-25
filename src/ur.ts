@@ -261,9 +261,9 @@ function cursor_has_collided_zombie(z: Zombie) {
     return box_intersect(c_box(cursor.xy), zombie_box(z.steer.body.position.xy))
 }
 
-function cursor_knock_zombie(z: Zombie, scale = 6000) {
+function cursor_knock_zombie(z: Zombie, scale = 6000, duration = 200) {
     z.knock_force = z.steer.body.side.scale(rnd_sign() * scale).xy
-    Tween.add(200, z.knock_force, [0, 0], linear)
+    Tween.add(duration, z.knock_force, [0, 0], linear)
 }
 
 function zombie_add() {
@@ -292,9 +292,9 @@ function zombie_add() {
 
         zz.push(z)
 
-        ConditionalEveryAndAfter.add(() => z.wiggle < 0.8, (value) => {
+        ConditionalEveryAndAfter.add(() => z.wiggle < 0.6, (value) => {
             if (!value) {
-                cursor_knock_zombie(z, rnd_int(3000, 5000))
+                cursor_knock_zombie(z, rnd_int(3000, 5000), rnd_int(60, 330))
             }
         }, undefined, z.trigger)
 
