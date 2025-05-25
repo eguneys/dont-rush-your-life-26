@@ -43,6 +43,7 @@ export type RigidBody = {
     update(delta: number): void
     add_force(v: Vec2): void
     add_steering_force(v: Vec2): void
+    add_impulse(v: Vec2): void
     position: Vec2
     velocity: Vec2
     heading: Vec2
@@ -74,10 +75,15 @@ export function rigid_body(xy: Vec2, opts: RigidOptions): RigidBody {
         body.force = body.force.add(f)
     }
 
+    function add_impulse(impulse: Vec2) {
+        body.dx = body.dx.add(impulse)
+    }
+
     return {
         update,
         add_steering_force,
         add_force,
+        add_impulse,
         get position() {
             return body.xy
         },
@@ -99,17 +105,19 @@ export function rigid_body(xy: Vec2, opts: RigidOptions): RigidBody {
     }
 }
 
-type Behavior = [(body: RigidBody) => Vec2, number]
+export type Behavior = [(body: RigidBody) => Vec2, number]
 
 export type SteerBehaviors = {
     body: RigidBody
     update(delta: number): void
     set_bs(bs: Behavior[]): void
+    add_applied_force(f: Vec2): void
 }
 
 /* https://github.com/wangchen/Programming-Game-AI-by-Example-src/tree/master/Buckland_Chapter3-Steering%20Behaviors */
 export function steer_behaviours(xy: Vec2, opts: RigidOptions, bs: Behavior[]): SteerBehaviors {
 
+    let applied_force = Vec2.zero
     let body = rigid_body(xy, opts)
 
     function update(delta: number) {
@@ -123,6 +131,9 @@ export function steer_behaviours(xy: Vec2, opts: RigidOptions, bs: Behavior[]): 
             body.add_steering_force(steering.scale(weight / t_weight))
         }
 
+        body.add_force(applied_force)
+        applied_force = Vec2.zero
+
         body.update(delta)
     }
 
@@ -132,6 +143,9 @@ export function steer_behaviours(xy: Vec2, opts: RigidOptions, bs: Behavior[]): 
         update,
         set_bs(new_bs: Behavior[]) {
             bs = new_bs
+        },
+        add_applied_force(f: Vec2) {
+            applied_force = applied_force.add(f)
         }
     }
 }

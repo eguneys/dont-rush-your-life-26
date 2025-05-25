@@ -33,7 +33,9 @@ export type GL = {
     shape_line(x: number, y: number, x2: number, y2: number, thickness: number, color: Color): void
 }
 
-export const g = GL(480, 270)
+//export const g = GL(480, 270)
+//export const g = GL(1920, 1080)
+export const g = GL(960, 540)
 
 
 export function GL(width: number, height: number): GL {

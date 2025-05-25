@@ -276,7 +276,7 @@ export class ConditionalDuring implements TriggerUpdate {
     }
 }
 
-export class Tween implements TriggerUpdate {
+export class OTween implements TriggerUpdate {
 
     timer = 0
 
@@ -285,7 +285,7 @@ export class Tween implements TriggerUpdate {
      * after is called after the duration ends.
      */
     static add = (delay: Delay, source: Record<string, number>, target: Record<string, number>, easing: Easing, after?: () => void, tag = gen_tag(), t = global_trigger): void => {
-        t.add(tag, new Tween(delay, source, target, easing, after))
+        t.add(tag, new OTween(delay, source, target, easing, after))
     }
 
 
@@ -304,6 +304,42 @@ export class Tween implements TriggerUpdate {
         let t = this.easing(this.timer / this.delay)
         for (let key of Object.keys(this.target)) {
             this.source[key] = lerp(this.initial_values[key], this.target[key], t)
+        }
+        if (this.timer > this.delay) {
+            return true
+        }
+        return false
+    }
+}
+
+export class Tween implements TriggerUpdate {
+
+    timer = 0
+
+    /**
+     * Tweens the source values to specified target values for delay seconds
+     * after is called after the duration ends.
+     */
+    static add = (delay: Delay, source: number[], target: number[], easing: Easing, after?: () => void, tag = gen_tag(), t = global_trigger): void => {
+        t.add(tag, new Tween(delay, source, target, easing, after))
+    }
+
+
+    delay: number
+    initial_values: number[]
+
+    constructor(readonly unresolved_delay: Delay, readonly source: number[], readonly target: number[], readonly easing: Easing, readonly after?: () => void) {
+        this.initial_values = []
+        for (let i = 0; i < this.target.length; i++) {
+            this.initial_values[i] = this.source[i]
+        }
+        this.delay = resolve_delay(unresolved_delay)
+    }
+
+    _update(): boolean {
+        let t = this.easing(this.timer / this.delay)
+        for (let i = 0; i < this.target.length; i++) {
+            this.source[i] = lerp(this.initial_values[i], this.target[i], t)
         }
         if (this.timer > this.delay) {
             return true

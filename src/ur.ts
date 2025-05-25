@@ -1,10 +1,11 @@
-import { After, Every, global_trigger } from './krx/trigger'
-import { b_chase_steer, b_pursuit_steer, b_separation_steer, b_wander_steer, steer_behaviours, SteerBehaviors } from './math/steer'
+import { After, Every, global_trigger, Tween } from './krx/trigger'
+import { linear } from './math/ease'
+import { b_chase_steer, b_pursuit_steer, b_separation_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
 import { Vec2 } from './math/vec2'
 import { PointerJust } from './pointer_just'
 import { pixel_perfect_position_update, pos_xy, position, Position } from './position'
-import { random, rnd_int } from './random'
-import { appr, clamp, step_round, XY, XYWH } from './util'
+import { random, rnd_float, rnd_int } from './random'
+import { appr, box_intersect, clamp, step_round, XY, XYWH } from './util'
 import { Color } from './webgl/color'
 import { g } from './webgl/gl_init'
 
@@ -19,6 +20,7 @@ let p: PointerJust
 
 type Zombie = {
     steer: SteerBehaviors
+    knock_force: XY
 }
 
 type Cursor = {
@@ -39,10 +41,11 @@ let zz: Zombie[]
 export function _init() {
 
     p = PointerJust()
-    p.set_sensitivity(0.3)
+    //p.set_sensitivity(0.3)
+    p.set_sensitivity(0.8)
 
     cursor = {
-        xy: position(0, 0, 10, 10),
+        xy: position(g.width / 2, g.height/ 2, 20, 20),
         theta: 0,
         stick_ran_on_down: false,
         t_stick: 0,
@@ -67,11 +70,7 @@ export function _init() {
         )
 
         After.add(3000, () => {
-            flock.forEach(_ => _.steer.set_bs([
-                [b_pursuit_steer(steer_target(cursor.xy), 0.01), .8],
-                [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
-                [b_wander_steer(380, 500, 100, random), 2]
-            ]))
+            flock.forEach(_ => _.steer.set_bs(default_zombie_steer()))
         })
     })
 }
@@ -88,23 +87,49 @@ export function _update(delta: number) {
     
     update_cursor(delta)
 
+    for (let z of zz) {
+        if (cursor_has_collided_zombie(z)) {
+            cursor_knock_zombie(z)
+            t_slow += 20
+        }
+    }
+
 
     global_trigger.update(delta)
 }
 
+function cursor_has_collided_zombie(z: Zombie) {
+    return box_intersect(c_box(cursor.xy), zombie_box(z.steer.body.position.xy))
+}
+
+function cursor_knock_zombie(z: Zombie) {
+    z.knock_force = z.steer.body.side.scale(6000).xy
+    Tween.add(200, z.knock_force, [0, 0], linear)
+}
+
 function zombie_add() {
+    if (zz.length !== 0) {
+        //return
+
+    }
     zz.push({
+        knock_force: [0, 0],
         steer: steer_behaviours(Vec2.make(100, 100), {
             mass: 1,
             damping: 1,
             max_speed: 300,
             max_force: 2000
-        }, [
-            [b_pursuit_steer(steer_target(cursor.xy), 0.01), .8],
-            [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
-            [b_wander_steer(380, 500, 100, random), 2]
-        ]),
+        }, default_zombie_steer()),
     })
+}
+
+function default_zombie_steer(): Behavior[] {
+    return [
+        [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 3)],
+        [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
+        //[b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)]
+        [b_wander_steer(80, 500, 100, random), 8]
+    ]
 }
 
 function steer_target(pos: Position) {
@@ -123,6 +148,8 @@ function update_zombie(z: Zombie, delta: number) {
 
     z.steer.update(delta)
 
+    z.steer.add_applied_force(Vec2.xy(z.knock_force))
+    //z.steer.body.add_impulse(Vec2.xy(z.knock_force))
 }
 
 
@@ -252,11 +279,11 @@ export function _render() {
 }
 
 function render_zombie(z: Zombie) {
-    g.shape_rect(...zombie_box(z.steer.body.position.xy), Color.red, 0)
+    g.shape_rect(...zombie_box(z.steer.body.position.xy), Color.red, z.steer.body.side.angle)
 }
 
 function zombie_box(xy: XY): XYWH {
-    return [xy[0], xy[1], 10, 10]
+    return [xy[0], xy[1], 8, 16]
 }
 
 let stamina_box: XYWH = [2, 2, 8, 180 -4]
