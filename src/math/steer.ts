@@ -63,9 +63,12 @@ export function rigid_body(xy: Vec2, opts: RigidOptions): RigidBody {
         m_left = opts.max_force
     }
 
+    let s_factor = 0.1
+    let smoothed_force = Vec2.zero
     let m_left = opts.max_force
     function add_steering_force(f: Vec2) {
-        f = f.truncate(m_left)
+        smoothed_force = smoothed_force.scale(1 - s_factor).add(f.scale(s_factor))
+        f = smoothed_force.truncate(m_left)
         m_left -= f.length
 
         body.force = body.force.add(f)
@@ -101,6 +104,9 @@ export function rigid_body(xy: Vec2, opts: RigidOptions): RigidBody {
         },
         get max_speed() {
             return opts.max_speed
+        },
+        set max_speed(v: number) {
+            opts.max_speed = v
         }
     }
 }

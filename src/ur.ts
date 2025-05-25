@@ -1,7 +1,7 @@
-import { After, Every, global_trigger, Tween } from './krx/trigger'
+import { After,  ConditionalEveryAndAfter, Every, global_trigger, OTween, Tween } from './krx/trigger'
 import { linear } from './math/ease'
-import { b_chase_steer, b_pursuit_steer, b_separation_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
-import { Vec2 } from './math/vec2'
+import { b_arrive_steer, b_avoid_circle_steer, b_chase_steer, b_pursuit_steer, b_separation_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
+import { Line, Rectangle, Vec2 } from './math/vec2'
 import { PointerJust } from './pointer_just'
 import { pixel_perfect_position_update, pos_xy, position, Position } from './position'
 import { random, rnd_float, rnd_int } from './random'
@@ -19,8 +19,11 @@ class Theme {
 let p: PointerJust
 
 type Zombie = {
+    on_pursuit: boolean
     steer: SteerBehaviors
     knock_force: XY
+    patrol?: XY[]
+    ping: number
 }
 
 type Cursor = {
@@ -68,10 +71,38 @@ export function _init() {
                 [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), .3]
             ])
         )
+        flock.forEach(f => f.on_pursuit = true)
+        flock.forEach(f => f.steer.body.max_speed = 1000)
 
         After.add(3000, () => {
-            flock.forEach(_ => _.steer.set_bs(default_zombie_steer()))
+            flock.forEach(_ => _.steer.set_bs(pursuit_zombie_steer()))
+            flock.forEach(f => f.on_pursuit = false)
+            flock.forEach(f => f.steer.body.max_speed = 800)
         })
+    })
+
+
+    ConditionalEveryAndAfter.add(() => cursor.stick !== undefined, (has_stick: boolean) => {
+        let flock = zz
+
+        if (has_stick) {
+            flock.forEach(_ => _.steer.set_bs(
+                [
+                    [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 2)],
+                    [b_avoid_circle_steer(steer_target(cursor.xy), 200), 3],
+                    [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), .3]
+                ])
+            )
+            flock.forEach(f => f.steer.body.max_speed = 800)
+        } else {
+            flock.forEach(_ => _.steer.set_bs(pursuit_zombie_steer()))
+            flock.forEach(f => f.steer.body.max_speed = 300)
+        }
+    })
+
+
+    Every.add(1000, () => {
+        console.log(`Zombies: `, zz.length)
     })
 }
 
@@ -87,15 +118,29 @@ export function _update(delta: number) {
     
     update_cursor(delta)
 
-    for (let z of zz) {
-        if (cursor_has_collided_zombie(z)) {
-            cursor_knock_zombie(z)
-            t_slow += 20
+    if (cursor.stick) {
+
+    } else {
+        for (let z of zz) {
+            if (cursor_has_collided_zombie(z)) {
+                cursor_knock_zombie(z)
+                t_slow += 20
+            }
         }
     }
 
+    for (let z of zz) {
+        if (!zombie_collided_play_world(z)) {
+            z.ping += delta
+        }
+    }
 
     global_trigger.update(delta)
+}
+
+let _play_world_box: XYWH = [-g.width / 2, -g.height/ 2, g.width * 2, g.height * 2]
+function zombie_collided_play_world(z: Zombie) {
+    return has_collided_bounds(...zombie_box(z.steer.body.position.xy))
 }
 
 function cursor_has_collided_zombie(z: Zombie) {
@@ -113,17 +158,69 @@ function zombie_add() {
 
     }
     zz.push({
+        ping: 0,
+        on_pursuit: false,
         knock_force: [0, 0],
         steer: steer_behaviours(Vec2.make(100, 100), {
             mass: 1,
             damping: 1,
             max_speed: 300,
             max_force: 2000
-        }, default_zombie_steer()),
+        }, spawn_zombie_steer()),
+    })
+
+
+    Every.add(2000, () => {
+        let z = zz[zz.length - 1]
+        if (!z || z.patrol) {
+            return
+        }
+
+        let a = Vec2.make(rnd_int(0, g.width), rnd_int(0, g.height))
+        z.patrol = [a.xy]
+        for (let i = 0; i < 3; i++) {
+            let b = Vec2.xy(z.patrol![0]).add(Vec2.from_angle(rnd_int(0, Math.PI * 2)).scale(rnd_int(60, 120)))
+            z.patrol!.push(b.xy)
+        }
+    })
+
+    Every.add_immediate(1000, () => {
+        for (let z of zz) {
+            if (z.on_pursuit) {
+                return
+            }
+            if (!z.patrol) {
+                return
+            }
+
+            z.steer.body.max_speed = 100
+            z.patrol.push(z.patrol.shift()!)
+
+            z.steer.set_bs(
+                [
+                    [b_arrive_steer(xy_target(...z.patrol[0]), 20), .8],
+                ])
+        }
     })
 }
 
-function default_zombie_steer(): Behavior[] {
+function xy_target(x: number, y: number) {
+    return {
+        position: Vec2.make(x, y)
+    }
+}
+
+
+function spawn_zombie_steer(): Behavior[] {
+    return [
+        [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
+        [b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)],
+        [b_wander_steer(rnd_int(250, 500), 500, 100, random), rnd_int(2, 4)],
+        [b_wander_steer(80, 500, 100, random), 8]
+    ]
+}
+
+function pursuit_zombie_steer(): Behavior[] {
     return [
         [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 3)],
         [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), 1],
@@ -146,6 +243,12 @@ function steer_target(pos: Position) {
 
 function update_zombie(z: Zombie, delta: number) {
 
+    z.ping = appr(z.ping, -1000, delta)
+
+    if (z.ping === -1000) {
+        zz.splice(zz.indexOf(z), 1)
+    }
+
     z.steer.update(delta)
 
     z.steer.add_applied_force(Vec2.xy(z.knock_force))
@@ -166,15 +269,18 @@ function update_cursor(delta: number) {
             if (cursor.stamina === 0) {
 
             } else {
-                cursor.stick = position(...p.cursor, 10, 10)
+                cursor.stick = position(...p.cursor, 20, 20)
                 cursor.stick_ran_on_down = true
-                cursor.t_stick = 300
+                cursor.t_stick = 600
 
                 let stamina = cursor.stamina
                 cursor.stamina = Math.max(0, cursor.stamina - 300)
 
                 cursor.stamina_delta = cursor.stamina - stamina
                 cursor.t_stamina_delta = 200
+
+
+                OTween.add(1000, cursor, { theta: cursor.theta + 1 }, linear)
             }
         }
     } else {
@@ -245,7 +351,9 @@ function has_collided_bounds(x: number, y: number, w: number, h: number) {
 }
 
 function c_box(xy: Position): XYWH {
-    return [xy.i_x, xy.i_y, xy.w, xy.h]
+    let [x, y] = pos_xy(xy)
+
+    return [x - xy.w / 2, y - xy.h / 2, xy.w, xy.h]
 }
 
 export function _render() {
@@ -256,13 +364,8 @@ export function _render() {
 
     g.begin_shapes()
 
-    if (cursor.stick) {
-        g.shape_rect(...c_box(cursor.stick), Color.black, cursor.theta)
-        g.shape_rect(...c_box(cursor.xy), Color.white, cursor.theta)
-    } else {
-        g.shape_rect(...c_box(cursor.xy), Color.red, cursor.theta)
-    }
-
+    render_cursor()
+    
     for (let z of zz) {
         render_zombie(z)
     }
@@ -278,13 +381,122 @@ export function _render() {
     g.end_shapes()
 }
 
+function render_cursor() {
+    if (cursor.stick) {
+        g.shape_rect(...c_box(cursor.stick), Color.black, cursor.theta)
+        g.shape_rect(...c_box(cursor.xy), Color.white, cursor.theta)
+
+        let theta = cursor.theta
+        g.shape_rect(...stick_box(cursor.xy), new Color(10, 100, 20, 25), theta)
+        draw_lines(cursor_stick_lines(...drop_shadow(stick_box(cursor.xy)), 30, 30, 30, theta), 4, Theme.Shadow)
+        draw_lines(cursor_stick_lines(...stick_box(cursor.xy), 30, 30, 30, theta), 4, Color.red)
+
+
+        g.shape_rect(...stick_box_inner(cursor.xy), new Color(100, 10, 10, 85), theta + Math.PI / 4)
+        draw_lines(cursor_stick_lines(...drop_shadow(stick_box_inner(cursor.xy)), 30, 30, 30, theta + Math.PI / 4), 1, Theme.Shadow)
+        draw_lines(cursor_stick_lines(...stick_box_inner(cursor.xy), 30, 30, 30, theta + Math.PI / 4), 1.8, Color.white)
+
+
+
+    } else {
+        g.shape_arc(...c_box(cursor.xy), Color.red, cursor.theta)
+    }
+}
+
+let dash_offset = 0
+function cursor_stick_lines(x: number, y: number, w: number, h: number, dash_length: number, gap_length: number, offset: number, theta: number = 0): XY[] {
+
+    const segments: XY[] = []
+
+    let cx = x + w / 2
+    let cy = y + h / 2
+  const points = [
+    Vec2.rotate_point(x, y, theta, cx, cy),
+    Vec2.rotate_point(x + w, y, theta, cx, cy),
+    Vec2.rotate_point(x + w, y + h, theta, cx, cy),
+    Vec2.rotate_point(x, y + h, theta, cx, cy),
+    Vec2.rotate_point(x, y, theta, cx, cy)
+  ];
+
+  dash_offset++ 
+
+  for (let i = 0; i < 4; i++) {
+    let p1 = points[i]
+    let p2 = points[i + 1]
+    let edge_len = p1.distance(p2)
+
+    let dash_start = (offset + (dash_offset * 1.6 + i)) % (dash_length + gap_length) - dash_length / 2
+    let dash_neg_cut = dash_start < 0 ? 0 : dash_start
+
+    let line = new Line(p1, p2)
+    while (dash_start < edge_len) {
+        const dash_end = Math.min(dash_start + dash_length, edge_len)
+        const start = line.interpolate(dash_neg_cut)
+        const end = line.interpolate(dash_end)
+        segments.push(start.xy)
+        segments.push(end.xy)
+        dash_start += dash_length + gap_length
+        dash_neg_cut = dash_start
+    }
+  }
+
+  return segments
+}
+
+function draw_lines(l: XY[], thickness: number, color: Color) {
+    for (let i = 0; i < l.length - 1; i+=2) {
+        let l0 = l[i]
+        let l1 = l[i + 1]
+        let [x, y] = l0
+        let [x2, y2] = l1
+        g.shape_line(x, y, x2, y2, thickness, color)
+    }
+}
+
+function stick_box(xy: Position): XYWH {
+    let [x, y] = pos_xy(xy)
+    return [x - 100, y - 100, 200, 200]
+}
+
+function stick_box_inner(xy: Position): XYWH {
+    return Rectangle.make(...stick_box(xy)).smaller(120).xywh
+}
+
+
+
 function render_zombie(z: Zombie) {
-    g.shape_rect(...zombie_box(z.steer.body.position.xy), Color.red, z.steer.body.side.angle)
+    let color = z.on_pursuit ? Color.white : Color.red
+    g.shape_rect(...drop_shadow(zombie_box(z.steer.body.position.xy)), Theme.Shadow, z.steer.body.side.angle)
+    g.shape_rect(...zombie_box(z.steer.body.position.xy), color, z.steer.body.side.angle)
+    g.shape_rect(...high_shadow2(zombie_box(z.steer.body.position.xy)), Theme.HighShadow, z.steer.body.side.angle)
+
+
+    g.shape_line(...zombie_tail(z), 3, Color.red)
+}
+
+function zombie_tail(z: Zombie): XYWH {
+    let p = z.steer.body.position
+    let p2 = p.sub(z.steer.body.heading.scale(10))
+
+    return [...p.xy, ...p2.xy]
 }
 
 function zombie_box(xy: XY): XYWH {
     return [xy[0], xy[1], 8, 16]
 }
+
+
+function drop_shadow(xywh: XYWH): XYWH {
+    return [xywh[0] + 2, xywh[1] + 2, xywh[2], xywh[3]]
+}
+// @ts-ignore
+function high_shadow(xywh: XYWH): XYWH {
+    return [xywh[0], xywh[1], xywh[2] / 2, xywh[3] / 2]
+}
+function high_shadow2(xywh: XYWH): XYWH {
+    return [xywh[0] + xywh[2] / 2, xywh[1], xywh[2] / 2, xywh[3] / 2]
+}
+
 
 let stamina_box: XYWH = [2, 2, 8, 180 -4]
 

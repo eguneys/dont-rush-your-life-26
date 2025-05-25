@@ -29,6 +29,7 @@ export type GL = {
     end_stencil(): void
     begin_shapes(): void
     end_shapes(): void
+    shape_arc(x: number, y: number, w: number, h: number, color: Color, theta?: number): void
     shape_rect(x: number, y: number, w: number, h: number, color: Color, theta?: number): void
     shape_line(x: number, y: number, x2: number, y2: number, thickness: number, color: Color): void
 }
@@ -170,18 +171,18 @@ export function GL(width: number, height: number): GL {
         end_shapes() {
             shape_batch.flush()
         },
+        shape_arc(x: number, y: number, w: number, h: number, color: Color) {
+            x = Math.floor(x)
+            y = Math.floor(y)
+
+            shape_batch.draw(x, y, w, h, 0, 0, 1, 1, color.rgba, 0, 1)
+        },
         shape_rect(x: number, y: number, w: number, h: number, color: Color, theta = 0) {
             x = Math.floor(x)
             y = Math.floor(y)
 
-            /*
-            x /= width
-            y /= height
-            w /= width
-            h /= height
-            */
 
-            shape_batch.draw(x, y, w, h, 0, 0, 0, 0, color.rgba, theta)
+            shape_batch.draw(x, y, w, h, 0, 0, 1, 1, color.rgba, theta, 0)
         },
         shape_line(x: number, y: number, x2: number, y2: number, thickness: number, color: Color) {
             x = Math.floor(x)

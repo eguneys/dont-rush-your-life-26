@@ -3,7 +3,7 @@ import { Rectangle, Vec2 } from "../math/vec2";
 export class SpriteBatch {
   private gl: WebGL2RenderingContext;
   private maxSprites = 1000;
-  private vertexSize = 4 * (2 + 2 + 4); // pos (2) + uv (2) + color (4)
+  private vertexSize = 4 * (2 + 2 + 4 + 1); // pos (2) + uv (2) + color (4) + type (1)
   private buffer: Float32Array;
   private bufferIndex = 0;
   private vao: WebGLVertexArrayObject;
@@ -41,6 +41,11 @@ export class SpriteBatch {
     // Color
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 4 * 4);
+
+
+    // Type
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 8 * 4);
   }
 
   begin(texture: WebGLTexture) {
@@ -48,7 +53,7 @@ export class SpriteBatch {
     this.texture = texture;
   }
 
-  draw(x: number, y: number, w: number, h: number, u = 0, v = 0, u2 = 1, v2 = 1, color = [1, 1, 1, 1], theta: number = 0) {
+  draw(x: number, y: number, w: number, h: number, u = 0, v = 0, u2 = 1, v2 = 1, color = [1, 1, 1, 1], theta: number = 0, type = 0) {
     if (this.bufferIndex + 6 * this.vertexSize / 4 >= this.buffer.length) {
       this.flush();
     }
@@ -75,6 +80,7 @@ export class SpriteBatch {
       this.buffer[this.bufferIndex++] = color[1];
       this.buffer[this.bufferIndex++] = color[2];
       this.buffer[this.bufferIndex++] = color[3];
+      this.buffer[this.bufferIndex++] = type;
     }
   }
 
@@ -106,6 +112,7 @@ export class SpriteBatch {
       this.buffer[this.bufferIndex++] = color[1];
       this.buffer[this.bufferIndex++] = color[2];
       this.buffer[this.bufferIndex++] = color[3];
+      this.buffer[this.bufferIndex++] = 0;
     }
   }
 

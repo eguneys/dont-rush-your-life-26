@@ -345,6 +345,14 @@ export class Line {
 
     constructor(readonly a: Vec2, readonly b: Vec2) {}
 
+    interpolate(dist: number) {
+        let dd = this.b.sub(this.a)
+
+        let len = dd.length
+        let ratio = dist / len
+        return this.a.add(dd.scale(ratio))
+    }
+
     unsafe_segments(ns: number[], xs: number[]) {
         return ns.map((_, i) =>
         this.a.add(this.normal!.scale(xs[i]).add(this.parallel!.scale(this.length * _))))
@@ -405,7 +413,7 @@ export class Rectangle {
 
     static get unit() { return Rectangle.make(0, 0, 1, 1) }
 
-    get xywh() {
+    get xywh(): XYWH {
         let { x, y, w, h } = this
         return [x, y, w, h]
     }
@@ -438,8 +446,14 @@ export class Rectangle {
     }
 
     larger(r: number) {
-        return Rectangle.make(this.x - r, this.y - r, this.w + r, this.h + r)
+        return Rectangle.make(this.x - r / 2, this.y - r / 2, this.w + r, this.h + r)
     }
+
+    smaller(r: number) {
+        return Rectangle.make(this.x + r  / 2, this.y + r / 2, this.w - r, this.h - r)
+    }
+
+
 
     constructor(readonly vertices: Vec2[]) {}
 

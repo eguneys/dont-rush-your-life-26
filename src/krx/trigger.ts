@@ -218,6 +218,37 @@ export class ConditionalEvery implements TriggerUpdate {
 }
 
 
+export class ConditionalEveryAndAfter implements TriggerUpdate {
+
+    timer = 0
+
+    /**
+     * Calls the action once every time the condition changes
+     */
+    static add = (condition: () => boolean, action: (yes: boolean) => void, tag = gen_tag(), t = global_trigger): void => {
+        t.add(tag, new ConditionalEveryAndAfter(condition, action))
+    }
+
+    last_condition = false
+
+    constructor(readonly condition: () => boolean, readonly c_action: (_: boolean) => void) {}
+
+    _update(): boolean {
+        let condition = this.condition()
+        if (condition && !this.last_condition) {
+            this.c_action(true)
+        }
+        if (!condition && this.last_condition) {
+            this.c_action(false)
+        }
+        this.last_condition = condition
+        return false
+    }
+}
+
+
+
+
 
 export class During implements TriggerUpdate {
 
@@ -276,6 +307,8 @@ export class ConditionalDuring implements TriggerUpdate {
     }
 }
 
+type OTweenKey = any
+
 export class OTween implements TriggerUpdate {
 
     timer = 0
@@ -284,15 +317,15 @@ export class OTween implements TriggerUpdate {
      * Tweens the source values to specified target values for delay seconds
      * after is called after the duration ends.
      */
-    static add = (delay: Delay, source: Record<string, number>, target: Record<string, number>, easing: Easing, after?: () => void, tag = gen_tag(), t = global_trigger): void => {
+    static add = (delay: Delay, source: OTweenKey, target: OTweenKey, easing: Easing, after?: () => void, tag = gen_tag(), t = global_trigger): void => {
         t.add(tag, new OTween(delay, source, target, easing, after))
     }
 
 
     delay: number
-    initial_values: Record<string, number>
+    initial_values: OTweenKey
 
-    constructor(readonly unresolved_delay: Delay, readonly source: Record<string, number>, readonly target: Record<string, number>, readonly easing: Easing, readonly after?: () => void) {
+    constructor(readonly unresolved_delay: Delay, readonly source: OTweenKey, readonly target: OTweenKey, readonly easing: Easing, readonly after?: () => void) {
         this.initial_values = {}
         for (let key of Object.keys(target)) {
             this.initial_values[key] = this.source[key]
