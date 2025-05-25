@@ -1,5 +1,5 @@
 import { After,  ConditionalEveryAndAfter, Cooldown, Every, global_trigger, OTween, Tween } from './krx/trigger'
-import { linear, quad_in, sine_in  } from './math/ease'
+import { linear, sine_in  } from './math/ease'
 import { b_arrive_steer, b_avoid_circle_steer, b_chase_steer, b_pursuit_steer, b_separation_steer, b_wall_avoid_steer, b_wander_steer, Behavior, steer_behaviours, SteerBehaviors } from './math/steer'
 import { Line, Rectangle, Vec2 } from './math/vec2'
 import { PointerJust } from './pointer_just'
@@ -98,12 +98,7 @@ export function _init() {
         let flock = zz
 
         if (has_stick) {
-            flock.forEach(_ => _.steer.set_bs(
-                [
-                    [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 2)],
-                    [b_avoid_circle_steer(steer_target(cursor.xy), 200), 3],
-                    [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), .3]
-                ])
+            flock.forEach(_ => _.steer.set_bs(after_pursuit_steer())
             )
             flock.forEach(f => f.steer.body.max_speed = 800)
         } else {
@@ -130,16 +125,21 @@ export function _init() {
 
 
     Every.add(2000, () => {
-        let z = zz[zz.length - 1]
-        if (!z || z.patrol) {
-            return
-        }
+        for (let z of zz) {
+            if (!z || z.patrol) {
+                continue
+            }
 
-        let a = Vec2.make(rnd_int(0, g.width), rnd_int(0, g.height))
-        z.patrol = [a.xy]
-        for (let i = 0; i < 3; i++) {
-            let b = Vec2.xy(z.patrol![0]).add(Vec2.from_angle(rnd_int(0, Math.PI * 2)).scale(rnd_int(60, 120)))
-            z.patrol!.push(b.xy)
+            if (rnd_int(0, 10) < 7) {
+                continue
+            }
+
+            let a = Vec2.make(rnd_int(0, g.width), rnd_int(0, g.height))
+            z.patrol = [a.xy]
+            for (let i = 0; i < 2; i++) {
+                let b = Vec2.xy(z.patrol![0]).add(Vec2.from_angle(rnd_int(0, Math.PI * 2)).scale(rnd_int(160, 260)))
+                z.patrol!.push(b.xy)
+            }
         }
     })
 
@@ -152,7 +152,7 @@ export function _init() {
                 continue
             }
 
-            z.steer.body.max_speed = 100
+            z.steer.body.max_speed = 1000
             z.patrol.push(z.patrol.shift()!)
 
             z.steer.set_bs(
@@ -301,6 +301,15 @@ function spawn_zombie_steer(): Behavior[] {
     ]
 }
 
+function after_pursuit_steer(): Behavior[] {
+    return [
+        [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 2)],
+        [b_avoid_circle_steer(steer_target(cursor.xy), 200), 3],
+        [b_separation_steer({ get group() { return zz.map(_ => _.steer.body.position) } }), .3],
+        [b_wall_avoid_steer(300, { get walls() { return tt.map(_ => Line.make(..._.xy)) } }), 3],
+    ]
+}
+
 function pursuit_zombie_steer(): Behavior[] {
     return [
         [b_pursuit_steer(steer_target(cursor.xy), rnd_float(0.0008, 0.005)), rnd_int(1, 3)],
@@ -344,6 +353,10 @@ function update_cursor(delta: number) {
         p.cursor[0] = clamp(p.cursor[0], 0, g.width)
         p.cursor[1] = clamp(p.cursor[1], 0, g.height)
     }
+
+
+    let facing = Vec2.make(cursor.xy.dx, cursor.xy.dy).perpendicular.clamp_epsilon(10).angle
+    cursor.theta = appr(cursor.theta, facing, 3.3 * delta / 1000)
 
     if (p.is_down) {
         if (!cursor.stick_ran_on_down) {
@@ -446,12 +459,13 @@ export function _render() {
 
     g.begin_shapes()
 
-    render_cursor()
     
     zz.forEach(render_zombie)
 
     tt.forEach(render_trail_shadow)
     tt.forEach(render_trail)
+
+    render_cursor()
 
     render_ui()
 
@@ -493,20 +507,33 @@ function render_cursor() {
         g.shape_rect(...c_box(cursor.xy), Color.white, cursor.theta)
 
         let theta = cursor.theta
-        g.shape_rect(...stick_box(cursor.xy), new Color(10, 100, 20, 25), theta)
+        g.shape_rect(...stick_box(cursor.xy), new Color(10, 100, 20, 85), theta)
         draw_lines(cursor_stick_lines(...drop_shadow(stick_box(cursor.xy)), 30, 30, 30, theta), 4, Theme.Shadow)
         draw_lines(cursor_stick_lines(...stick_box(cursor.xy), 30, 30, 30, theta), 4, Color.red)
 
 
-        g.shape_rect(...stick_box_inner(cursor.xy), new Color(100, 10, 10, 85), theta + Math.PI / 4)
+        g.shape_rect(...stick_box_inner(cursor.xy), new Color(100, 10, 10, 185), theta + Math.PI / 4)
         draw_lines(cursor_stick_lines(...drop_shadow(stick_box_inner(cursor.xy)), 30, 30, 30, theta + Math.PI / 4), 1, Theme.Shadow)
         draw_lines(cursor_stick_lines(...stick_box_inner(cursor.xy), 30, 30, 30, theta + Math.PI / 4), 1.8, Color.white)
 
 
 
     } else {
+
+        let off = 8
+        g.shape_arc(...drop_shadow_theta(c_box(cursor.xy), cursor.theta, off), Theme.Shadow, cursor.theta)
+        g.shape_arc(...drop_shadow_theta(c_box(cursor.xy), cursor.theta + Math.PI, off), Theme.Shadow, cursor.theta)
+
         g.shape_arc(...c_box(cursor.xy), Color.red, cursor.theta)
     }
+}
+
+
+function drop_shadow_theta(xywh: XYWH, theta: number, off: number): XYWH {
+
+    let [x, y, w, h] = xywh
+
+    return [x + Math.cos(theta) * off, y + Math.sin(theta) * off, w, h]
 }
 
 let dash_offset = 0
@@ -573,7 +600,9 @@ function stick_box_inner(xy: Position): XYWH {
 function render_zombie(z: Zombie) {
 
 
-    let color = z.on_pursuit ? Color.white : Color.red
+    let color = z.on_pursuit ? Color.white : z.patrol ? Color.lerp(Color.red, Color.white, 0.5) : Color.hex(0x1060ff)
+
+
     g.shape_rect(...drop_shadow(zombie_box(z.steer.body.position.xy)), Theme.Shadow, z.steer.body.side.angle)
 
     g.shape_line_vary(...drop_shadow(zombie_tail(z)), 7, Theme.Shadow)

@@ -94,7 +94,7 @@ export function rigid_body(xy: Vec2, opts: RigidOptions): RigidBody {
             return body.dx
         },
         get heading() {
-            return this.velocity.normalize ?? Vec2.unit
+            return this.velocity.clamp_epsilon().normalize ?? Vec2.unit
         },
         get side() {
             return this.heading.perpendicular
@@ -310,6 +310,7 @@ function wall_avoid_steer(position: Matrix, length: number, walls: Line[]) {
             steering_force = closest_wall.normal?.scale(overshoot.length)
         }
     }
+    steering_force = steering_force?.scale(30)
     return steering_force ?? Vec2.zero
 }
 

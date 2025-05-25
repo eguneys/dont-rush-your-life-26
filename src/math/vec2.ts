@@ -1,4 +1,6 @@
 
+export const EPSILON = 1e-4
+
 export type XY = [number, number]
 export type XYWH = [number, number, number, number]
 
@@ -70,6 +72,11 @@ export class Vec2 {
     }
 
     constructor(readonly x: number, readonly y: number) {}
+
+    clamp_epsilon(epsilon = EPSILON): Vec2 {
+        return this.length < epsilon ? Vec2.zero : this
+    }
+
 
 
     dot(v: Vec2) {
